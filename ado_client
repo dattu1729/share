@@ -1,0 +1,306 @@
+from azure.devops.connection import Connection
+from msrest.authentication import BasicAuthentication
+from azure.devops.v7_0.work_item_tracking.models import Wiql
+import json
+import ssl
+import urllib3
+import os
+
+class AzureDevOpsWorkItemClient:
+    def __init__(self, organization_url, personal_access_token, verify_ssl=True, ca_bundle=None):
+        """
+        Initialize the Azure DevOps client with SSL options
+        
+        Args:
+            organization_url (str): Your Azure DevOps organization URL 
+                                   (e.g., 'https://dev.azure.com/yourorg')
+            personal_access_token (str): Your PAT token
+            verify_ssl (bool): Whether to verify SSL certificates (default: True)
+            ca_bundle (str): Path to CA bundle file (optional)
+        """
+        # Handle SSL verification settings
+        if not verify_ssl:
+            # Disable SSL warnings when verification is disabled
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            
+            # Create unverified SSL context
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            
+            # Set environment variable to disable SSL verification
+            os.environ['PYTHONHTTPSVERIFY'] = '0'
+            
+        elif ca_bundle:
+            # Use custom CA bundle
+            ssl_context = ssl.create_default_context(cafile=ca_bundle)
+            os.environ['REQUESTS_CA_BUNDLE'] = ca_bundle
+            os.environ['SSL_CERT_FILE'] = ca_bundle
+        else:
+            # Use default SSL context
+            ssl_context = ssl.create_default_context()
+        
+        # Store SSL settings for connection
+        self.verify_ssl = verify_ssl
+        self.ca_bundle = ca_bundle
+        
+        credentials = BasicAuthentication('', personal_access_token)
+        
+        # Create connection with SSL settings
+        self.connection = Connection(
+            base_url=organization_url, 
+            creds=credentials
+        )
+        
+        # Configure the underlying HTTP adapter if needed
+        if not verify_ssl:
+            # Monkey patch the session to ignore SSL
+            import requests.adapters
+            original_send = requests.adapters.HTTPAdapter.send
+            
+            def patched_send(self, request, **kwargs):
+                kwargs['verify'] = False
+                return original_send(self, request, **kwargs)
+            
+            requests.adapters.HTTPAdapter.send = patched_send
+        
+        elif ca_bundle:
+            # Set CA bundle for requests
+            import requests.adapters
+            original_send = requests.adapters.HTTPAdapter.send
+            
+            def patched_send(self, request, **kwargs):
+                kwargs['verify'] = ca_bundle
+                return original_send(self, request, **kwargs)
+            
+            requests.adapters.HTTPAdapter.send = patched_send
+        
+        self.work_item_client = self.connection.clients.get_work_item_tracking_client()
+    
+    def get_work_item_by_id(self, work_item_id, expand=None):
+        """
+        Get work item details by ID
+        
+        Args:
+            work_item_id (int): Work item ID
+            expand (str): Optional expansion ('relations', 'fields', 'links', 'all')
+        
+        Returns:
+            Work item object
+        """
+        try:
+            work_item = self.work_item_client.get_work_item(
+                id=work_item_id,
+                expand=expand
+            )
+            return work_item
+        except Exception as e:
+            print(f"Error getting work item {work_item_id}: {str(e)}")
+            return None
+    
+    def get_work_items_by_ids(self, work_item_ids, fields=None, expand=None):
+        """
+        Get multiple work items by their IDs
+        
+        Args:
+            work_item_ids (list): List of work item IDs
+            fields (list): Optional list of specific fields to retrieve
+            expand (str): Optional expansion
+        
+        Returns:
+            List of work item objects
+        """
+        try:
+            work_items = self.work_item_client.get_work_items(
+                ids=work_item_ids,
+                fields=fields,
+                expand=expand
+            )
+            return work_items
+        except Exception as e:
+            print(f"Error getting work items: {str(e)}")
+            return []
+    
+    def query_work_items(self, project, wiql_query):
+        """
+        Query work items using WIQL (Work Item Query Language)
+        
+        Args:
+            project (str): Project name
+            wiql_query (str): WIQL query string
+        
+        Returns:
+            Query results with work items
+        """
+        try:
+            wiql = Wiql(query=wiql_query)
+            query_results = self.work_item_client.query_by_wiql(wiql, project=project)
+            
+            if query_results.work_items:
+                # Extract work item IDs from query results
+                work_item_ids = [item.id for item in query_results.work_items]
+                # Get full work item details
+                work_items = self.get_work_items_by_ids(work_item_ids)
+                return work_items
+            return []
+        except Exception as e:
+            print(f"Error querying work items: {str(e)}")
+            return []
+    
+    def print_work_item_details(self, work_item):
+        """
+        Print formatted work item details
+        
+        Args:
+            work_item: Work item object
+        """
+        if not work_item:
+            print("Work item not found")
+            return
+        
+        print(f"Work Item ID: {work_item.id}")
+        print(f"URL: {work_item.url}")
+        print(f"Revision: {work_item.rev}")
+        print("\nFields:")
+        
+        # Common fields to display
+        common_fields = [
+            'System.WorkItemType',
+            'System.Title',
+            'System.State',
+            'System.AssignedTo',
+            'System.CreatedBy',
+            'System.CreatedDate',
+            'System.ChangedDate',
+            'System.Description',
+            'System.Tags',
+            'Microsoft.VSTS.Common.Priority',
+            'Microsoft.VSTS.Common.Severity'
+        ]
+        
+        for field in common_fields:
+            if field in work_item.fields:
+                value = work_item.fields[field]
+                if isinstance(value, dict) and 'displayName' in value:
+                    value = value['displayName']
+                print(f"  {field}: {value}")
+        
+        # Show relations if they exist
+        if hasattr(work_item, 'relations') and work_item.relations:
+            print("\nRelations:")
+            for relation in work_item.relations:
+                print(f"  {relation.rel}: {relation.url}")
+
+# Example usage with SSL options
+def main():
+    # Replace with your organization URL and PAT
+    organization_url = "https://dev.azure.com/yourorganization"
+    personal_access_token = "your-pat-token-here"
+    
+    # Option 1: Initialize client with SSL verification disabled (NOT recommended for production)
+    print("=== Example 1: Disable SSL Verification ===")
+    client_no_ssl = AzureDevOpsWorkItemClient(
+        organization_url, 
+        personal_access_token, 
+        verify_ssl=False
+    )
+    
+    # Option 2: Initialize client with custom CA bundle
+    print("\n=== Example 2: Custom CA Bundle ===")
+    client_with_ca = AzureDevOpsWorkItemClient(
+        organization_url, 
+        personal_access_token, 
+        ca_bundle="/path/to/your/ca-bundle.crt"
+    )
+    
+    # Option 3: Initialize client with default SSL (recommended)
+    print("\n=== Example 3: Default SSL Verification ===")
+    client_default = AzureDevOpsWorkItemClient(
+        organization_url, 
+        personal_access_token
+    )
+    
+    # Choose one of the clients above based on your needs
+    client = client_no_ssl  # Change this to your preferred client
+    
+    # Example 1: Get single work item by ID
+    print("\n=== Getting Work Item by ID ===")
+    work_item = client.get_work_item_by_id(123, expand='relations')
+    client.print_work_item_details(work_item)
+    
+    # Example 2: Get multiple work items
+    print("\n=== Getting Multiple Work Items ===")
+    work_items = client.get_work_items_by_ids([123, 124, 125])
+    for item in work_items:
+        print(f"ID: {item.id}, Title: {item.fields.get('System.Title', 'N/A')}")
+    
+    # Example 3: Query work items using WIQL
+    print("\n=== Querying Work Items ===")
+    project_name = "YourProjectName"
+    wiql_query = """
+    SELECT [System.Id], [System.Title], [System.State]
+    FROM WorkItems
+    WHERE [System.WorkItemType] = 'Bug'
+    AND [System.State] = 'Active'
+    ORDER BY [System.CreatedDate] DESC
+    """
+    
+    queried_items = client.query_work_items(project_name, wiql_query)
+    for item in queried_items:
+        client.print_work_item_details(item)
+        print("-" * 50)
+
+# Additional helper function to configure SSL globally
+def configure_ssl_globally(verify_ssl=True, ca_bundle=None):
+    """
+    Configure SSL settings globally for all requests
+    
+    Args:
+        verify_ssl (bool): Whether to verify SSL certificates
+        ca_bundle (str): Path to CA bundle file
+    """
+    if not verify_ssl:
+        # Disable SSL warnings
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        # Set environment variables
+        os.environ['PYTHONHTTPSVERIFY'] = '0'
+        os.environ['CURL_CA_BUNDLE'] = ''
+        
+        # Configure requests to ignore SSL
+        import requests
+        requests.packages.urllib3.disable_warnings()
+        
+    elif ca_bundle:
+        # Set CA bundle environment variables
+        os.environ['REQUESTS_CA_BUNDLE'] = ca_bundle
+        os.environ['SSL_CERT_FILE'] = ca_bundle
+        os.environ['CURL_CA_BUNDLE'] = ca_bundle
+
+# Example of global SSL configuration
+def main_with_global_ssl():
+    """
+    Example showing how to configure SSL globally before creating client
+    """
+    # Configure SSL globally (choose one option)
+    
+    # Option 1: Disable SSL verification globally
+    configure_ssl_globally(verify_ssl=False)
+    
+    # Option 2: Use custom CA bundle globally
+    # configure_ssl_globally(ca_bundle="/path/to/your/ca-bundle.crt")
+    
+    # Now create client normally
+    organization_url = "https://dev.azure.com/yourorganization"
+    personal_access_token = "your-pat-token-here"
+    
+    client = AzureDevOpsWorkItemClient(organization_url, personal_access_token)
+    
+    # Use client as normal
+    work_item = client.get_work_item_by_id(123)
+    client.print_work_item_details(work_item)
+
+if __name__ == "__main__":
+    # Choose which main function to run
+    main()  # Standard usage with SSL options
+    # main_with_global_ssl()  # Global SSL configuration
