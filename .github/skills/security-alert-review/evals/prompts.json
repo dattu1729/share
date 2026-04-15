@@ -1,0 +1,80 @@
+[
+  {
+    "id": "01",
+    "prompt": "show security alerts for repo MyApp in project Contoso",
+    "case_type": "explicit",
+    "skill_should_activate": true,
+    "notes": "Both project and repo provided — call advsec_get_alerts with defaults",
+    "checks": { "must_call": ["advsec_get_alerts"], "must_not_call": ["core_list_projects", "repo_list_repos_by_project"] }
+  },
+  {
+    "id": "02",
+    "prompt": "list critical dependency alerts for repo MyApp in Contoso",
+    "case_type": "contextual",
+    "skill_should_activate": true,
+    "notes": "Severity and type filter with both required params provided",
+    "checks": { "must_call": ["advsec_get_alerts"], "must_not_call": ["core_list_projects", "repo_list_repos_by_project"] }
+  },
+  {
+    "id": "03",
+    "prompt": "are there any exposed secrets in repo Backend project Fabrikam?",
+    "case_type": "contextual",
+    "skill_should_activate": true,
+    "notes": "alertType Secret implied; project and repo given",
+    "checks": { "must_call": ["advsec_get_alerts"], "must_not_call": ["core_list_projects", "repo_list_repos_by_project"] }
+  },
+  {
+    "id": "04",
+    "prompt": "give me a security overview for repo Frontend in project Alpha",
+    "case_type": "explicit",
+    "skill_should_activate": true,
+    "notes": "Summary grouped-by-type view requested",
+    "checks": { "must_call": ["advsec_get_alerts"], "must_not_call": ["core_list_projects", "repo_list_repos_by_project"] }
+  },
+  {
+    "id": "05",
+    "prompt": "show details for alert 42 in repo MyApp project Contoso",
+    "case_type": "explicit",
+    "skill_should_activate": true,
+    "notes": "Single alert detail — call advsec_get_alert_details",
+    "checks": { "must_call": ["advsec_get_alert_details"], "must_not_call": ["core_list_projects", "repo_list_repos_by_project"] }
+  },
+  {
+    "id": "06",
+    "prompt": "show all active code scanning alerts in repo MyApp project Contoso",
+    "case_type": "contextual",
+    "skill_should_activate": true,
+    "notes": "State Active and type Code filter applied",
+    "checks": { "must_call": ["advsec_get_alerts"], "must_not_call": ["core_list_projects", "repo_list_repos_by_project"] }
+  },
+  {
+    "id": "07",
+    "prompt": "what vulnerabilities does our codebase have?",
+    "case_type": "implicit",
+    "skill_should_activate": true,
+    "notes": "No project or repo — should ask for both before proceeding; no tools called yet"
+  },
+  {
+    "id": "08",
+    "prompt": "create a security policy for the project",
+    "case_type": "negative",
+    "skill_should_activate": false,
+    "notes": "Write/create action — outside this read-only skill's scope",
+    "checks": { "must_not_call": ["advsec_get_alerts", "advsec_get_alert_details"] }
+  },
+  {
+    "id": "09",
+    "prompt": "show security alerts",
+    "case_type": "implicit",
+    "skill_should_activate": true,
+    "notes": "No project or repo provided — skill should ask once for project then once for repo"
+  },
+  {
+    "id": "10",
+    "prompt": "show high and critical alerts in repo API project Contoso",
+    "case_type": "contextual",
+    "skill_should_activate": true,
+    "notes": "Multiple severity filter (High + Critical) with project and repo provided",
+    "checks": { "must_call": ["advsec_get_alerts"], "must_not_call": ["core_list_projects", "repo_list_repos_by_project"] }
+  }
+]

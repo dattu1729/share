@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+evals/artifacts/*.jsonl
+evals/artifacts/*.json
+evals/artifacts/*.grade.json

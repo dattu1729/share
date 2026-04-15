@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SkillEvalRubric",
+  "description": "Generic rubric for evaluating Claude Code skill responses. Skill-agnostic — applies to any skill evaluated by the central runner.",
+  "type": "object",
+  "required": [
+    "skill_triggered_correctly",
+    "correct_tools_called",
+    "missing_info_handled",
+    "output_format_correct",
+    "overall_score",
+    "reasoning"
+  ],
+  "properties": {
+    "skill_triggered_correctly": {
+      "type": "boolean",
+      "description": "For positive cases: the skill activated and attempted the task. For negative cases: the skill correctly declined or redirected rather than performing an out-of-scope action."
+    },
+    "correct_tools_called": {
+      "type": "boolean",
+      "description": "The correct tools were invoked in the correct order as specified in the skill's Steps/Rules section. No unnecessary or extraneous tool calls were made."
+    },
+    "missing_info_handled": {
+      "type": "boolean",
+      "description": "When required inputs were absent, the skill asked the user exactly once before falling back to a discovery tool or stopping. It did not skip the prompt or repeat it more than once."
+    },
+    "output_format_correct": {
+      "type": "boolean",
+      "description": "The response matches the display format defined in the skill spec: correct structure, required fields, sorting/grouping rules, and any formatting conventions (links, tables, emoji) the skill specifies."
+    },
+    "negative_case_respected": {
+      "type": ["boolean", "null"],
+      "description": "For negative test cases (skill_should_activate=false): true if the skill correctly did NOT perform the action. null for all positive test cases."
+    },
+    "overall_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 10,
+      "description": "Holistic quality score. 10=perfect, 7-9=minor issues only, 4-6=partially correct, 0-3=mostly wrong or skill failed to activate when it should have."
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "1-3 sentences explaining the score, citing specific passages from the skill instructions that were satisfied or violated."
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Specific problems found. Empty array if none. Each entry should quote the violated instruction and describe what the response did instead."
+    }
+  }
+}

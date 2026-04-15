@@ -1,0 +1,81 @@
+[
+  {
+    "id": "01",
+    "prompt": "list iterations for project Contoso",
+    "case_type": "explicit",
+    "skill_should_activate": true,
+    "notes": "Project provided; list-only — call work_list_iterations only",
+    "checks": { "must_call": ["work_list_iterations"], "must_not_call": ["work_list_team_iterations"] }
+  },
+  {
+    "id": "02",
+    "prompt": "show iterations for project Fabrikam and team Alpha Team",
+    "case_type": "explicit",
+    "skill_should_activate": true,
+    "notes": "Both project and team provided — call work_list_team_iterations",
+    "checks": { "must_call": ["work_list_team_iterations"] }
+  },
+  {
+    "id": "03",
+    "prompt": "create iterations after the last one through 2026 for project Contoso",
+    "case_type": "explicit",
+    "skill_should_activate": true,
+    "notes": "Create action — must first call work_list_iterations to infer cadence",
+    "checks": { "must_call": ["work_list_iterations", "work_create_iterations"] }
+  },
+  {
+    "id": "04",
+    "prompt": "assign all 2025 iterations to team Contoso Team in project Contoso",
+    "case_type": "explicit",
+    "skill_should_activate": true,
+    "notes": "Assign action — list first then assign matching date range",
+    "checks": { "must_call": ["work_assign_iterations"] }
+  },
+  {
+    "id": "05",
+    "prompt": "what sprints do we have in Contoso?",
+    "case_type": "implicit",
+    "skill_should_activate": true,
+    "notes": "Sprint is colloquial for iteration; project provided",
+    "checks": { "must_call": ["work_list_iterations"], "must_not_call": ["core_list_projects"] }
+  },
+  {
+    "id": "06",
+    "prompt": "set up our sprints for next year in Contoso using the same cadence",
+    "case_type": "contextual",
+    "skill_should_activate": true,
+    "notes": "Create continuations; project given — infer cadence from existing iterations",
+    "checks": { "must_call": ["work_list_iterations", "work_create_iterations"] }
+  },
+  {
+    "id": "07",
+    "prompt": "assign Sprint 1 and Sprint 2 to team Beta in project Fabrikam",
+    "case_type": "contextual",
+    "skill_should_activate": true,
+    "notes": "Named iterations assigned to named team",
+    "checks": { "must_call": ["work_assign_iterations"] }
+  },
+  {
+    "id": "08",
+    "prompt": "create a new backlog item in Contoso",
+    "case_type": "negative",
+    "skill_should_activate": false,
+    "notes": "Work item action not an iteration action — wrong skill",
+    "checks": { "must_not_call": ["work_list_iterations", "work_list_team_iterations", "work_create_iterations", "work_assign_iterations"] }
+  },
+  {
+    "id": "09",
+    "prompt": "show me the project schedule",
+    "case_type": "implicit",
+    "skill_should_activate": true,
+    "notes": "No project provided — should ask once for project name; no tools called yet"
+  },
+  {
+    "id": "10",
+    "prompt": "create sprints through Q2 2026 and assign them to team Contoso Team in project Contoso",
+    "case_type": "contextual",
+    "skill_should_activate": true,
+    "notes": "Combined create-then-assign; project and team both provided in one request",
+    "checks": { "must_call": ["work_create_iterations", "work_assign_iterations"] }
+  }
+]

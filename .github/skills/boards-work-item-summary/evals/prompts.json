@@ -1,0 +1,82 @@
+[
+  {
+    "id": "01",
+    "prompt": "summarize work item 12345",
+    "case_type": "explicit",
+    "skill_should_activate": true,
+    "notes": "ID provided directly — should call wit_get_work_item immediately",
+    "checks": { "must_call": ["wit_get_work_item"] }
+  },
+  {
+    "id": "02",
+    "prompt": "show me work item 42",
+    "case_type": "explicit",
+    "skill_should_activate": true,
+    "notes": "Alternate explicit phrasing with ID",
+    "checks": { "must_call": ["wit_get_work_item"] }
+  },
+  {
+    "id": "03",
+    "prompt": "tell me about work item 99",
+    "case_type": "implicit",
+    "skill_should_activate": true,
+    "notes": "Informal phrasing — ID present so no prompting needed",
+    "checks": { "must_call": ["wit_get_work_item"] }
+  },
+  {
+    "id": "04",
+    "prompt": "what is work item 115770 about?",
+    "case_type": "implicit",
+    "skill_should_activate": true,
+    "notes": "Question form with ID",
+    "checks": { "must_call": ["wit_get_work_item"] }
+  },
+  {
+    "id": "05",
+    "prompt": "summarize the current sprint work",
+    "case_type": "negative",
+    "skill_should_activate": false,
+    "notes": "No specific ID — this maps to a different skill not single-item summary",
+    "checks": { "must_not_call": ["wit_get_work_item"] }
+  },
+  {
+    "id": "06",
+    "prompt": "show me my work items",
+    "case_type": "negative",
+    "skill_should_activate": false,
+    "notes": "No ID — maps to boards-my-work not this skill",
+    "checks": { "must_not_call": ["wit_get_work_item"] }
+  },
+  {
+    "id": "07",
+    "prompt": "summarize the work item",
+    "case_type": "implicit",
+    "skill_should_activate": true,
+    "notes": "No ID provided — skill should prompt once before stopping; must not call tools yet",
+    "checks": { "must_not_call": ["wit_get_work_item"] }
+  },
+  {
+    "id": "08",
+    "prompt": "what is the status of bug 7890?",
+    "case_type": "contextual",
+    "skill_should_activate": true,
+    "notes": "Uses type hint with numeric ID",
+    "checks": { "must_call": ["wit_get_work_item"] }
+  },
+  {
+    "id": "09",
+    "prompt": "show me work item 456 including its links and comments",
+    "case_type": "contextual",
+    "skill_should_activate": true,
+    "notes": "Requests specific sub-sections; skill must call all three tools",
+    "checks": { "must_call": ["wit_get_work_item", "wit_list_work_item_comments"] }
+  },
+  {
+    "id": "10",
+    "prompt": "list all work items in Contoso",
+    "case_type": "negative",
+    "skill_should_activate": false,
+    "notes": "Bulk list request — not single item summary",
+    "checks": { "must_not_call": ["wit_get_work_item"] }
+  }
+]

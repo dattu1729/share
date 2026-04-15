@@ -1,0 +1,79 @@
+[
+  {
+    "id": "01",
+    "prompt": "show my work items for project Contoso",
+    "case_type": "explicit",
+    "skill_should_activate": true,
+    "notes": "User provides project name — use it directly without calling core_list_projects",
+    "checks": { "must_call": ["wit_my_work_items"], "must_not_call": ["core_list_projects"] }
+  },
+  {
+    "id": "02",
+    "prompt": "what work items am I assigned to?",
+    "case_type": "implicit",
+    "skill_should_activate": true,
+    "notes": "No project name — skill should ask user once for project name; no tools called yet"
+  },
+  {
+    "id": "03",
+    "prompt": "list my open tasks in project Fabrikam",
+    "case_type": "contextual",
+    "skill_should_activate": true,
+    "notes": "Informal phrasing with project name provided",
+    "checks": { "must_call": ["wit_my_work_items"], "must_not_call": ["core_list_projects"] }
+  },
+  {
+    "id": "04",
+    "prompt": "show my bugs and stories in Contoso",
+    "case_type": "contextual",
+    "skill_should_activate": true,
+    "notes": "User implies a type filter and provides project name",
+    "checks": { "must_call": ["wit_my_work_items"], "must_not_call": ["core_list_projects"] }
+  },
+  {
+    "id": "05",
+    "prompt": "what am I working on this week",
+    "case_type": "implicit",
+    "skill_should_activate": true,
+    "notes": "No project — should prompt once for project before proceeding; no tools called yet"
+  },
+  {
+    "id": "06",
+    "prompt": "show all work items in the project",
+    "case_type": "negative",
+    "skill_should_activate": false,
+    "notes": "Not scoped to current user — should not call wit_my_work_items",
+    "checks": { "must_not_call": ["wit_my_work_items"] }
+  },
+  {
+    "id": "07",
+    "prompt": "create a new work item for me",
+    "case_type": "negative",
+    "skill_should_activate": false,
+    "notes": "Create action — outside the scope of this retrieve-and-display skill",
+    "checks": { "must_not_call": ["wit_my_work_items"] }
+  },
+  {
+    "id": "08",
+    "prompt": "show team members' work items in Contoso",
+    "case_type": "negative",
+    "skill_should_activate": false,
+    "notes": "Other users' items — not the current user's assigned work",
+    "checks": { "must_not_call": ["wit_my_work_items"] }
+  },
+  {
+    "id": "09",
+    "prompt": "get my work items",
+    "case_type": "implicit",
+    "skill_should_activate": true,
+    "notes": "Short request without project — should prompt once for project name; no tools called yet"
+  },
+  {
+    "id": "10",
+    "prompt": "what issues are assigned to me in project Alpha",
+    "case_type": "contextual",
+    "skill_should_activate": true,
+    "notes": "Uses word issues but means work items; project name provided",
+    "checks": { "must_call": ["wit_my_work_items"], "must_not_call": ["core_list_projects"] }
+  }
+]

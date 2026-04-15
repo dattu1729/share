@@ -1,0 +1,79 @@
+[
+  {
+    "id": "01",
+    "prompt": "show recent builds for pipeline CI-Main in project Contoso",
+    "case_type": "explicit",
+    "skill_should_activate": true,
+    "notes": "Pipeline and project both provided — call pipelines_get_build_definitions then pipelines_get_builds",
+    "checks": { "must_call": ["pipelines_get_builds"], "must_not_call": ["core_list_projects"] }
+  },
+  {
+    "id": "02",
+    "prompt": "why did build 12345 fail in project Contoso?",
+    "case_type": "explicit",
+    "skill_should_activate": true,
+    "notes": "Specific build ID and project — should retrieve logs for failed steps",
+    "checks": { "must_call": ["pipelines_get_build_log"], "must_not_call": ["core_list_projects"] }
+  },
+  {
+    "id": "03",
+    "prompt": "what changes were in build 12345 in Contoso?",
+    "case_type": "explicit",
+    "skill_should_activate": true,
+    "notes": "Changes request — should call pipelines_get_build_changes",
+    "checks": { "must_call": ["pipelines_get_build_changes"], "must_not_call": ["core_list_projects"] }
+  },
+  {
+    "id": "04",
+    "prompt": "show me failed builds on main branch for project Fabrikam",
+    "case_type": "contextual",
+    "skill_should_activate": true,
+    "notes": "Branch and result filter implied; project provided — no pipeline specified so ask once",
+    "checks": { "must_call": ["pipelines_get_builds"], "must_not_call": ["core_list_projects"] }
+  },
+  {
+    "id": "05",
+    "prompt": "what is the status of build 999 in project Alpha?",
+    "case_type": "explicit",
+    "skill_should_activate": true,
+    "notes": "Status check for specific build — call pipelines_get_build_status",
+    "checks": { "must_call": ["pipelines_get_build_status"], "must_not_call": ["core_list_projects"] }
+  },
+  {
+    "id": "06",
+    "prompt": "show me the latest pipeline runs",
+    "case_type": "implicit",
+    "skill_should_activate": true,
+    "notes": "No project or pipeline — should ask once for project name; no tools called yet"
+  },
+  {
+    "id": "07",
+    "prompt": "why is my build red?",
+    "case_type": "implicit",
+    "skill_should_activate": true,
+    "notes": "Informal — no build ID or project — should ask for both; no tools called yet"
+  },
+  {
+    "id": "08",
+    "prompt": "trigger a new pipeline build for me",
+    "case_type": "negative",
+    "skill_should_activate": false,
+    "notes": "Create/trigger action — outside this skill's read-only scope",
+    "checks": { "must_not_call": ["pipelines_get_builds", "pipelines_get_build_status", "pipelines_get_build_log"] }
+  },
+  {
+    "id": "09",
+    "prompt": "show me the build logs for the last run",
+    "case_type": "implicit",
+    "skill_should_activate": true,
+    "notes": "No build ID — should prompt user for build ID or pipeline name; no tools called yet"
+  },
+  {
+    "id": "10",
+    "prompt": "list builds for CI-Main filtered to succeeded only, project Contoso",
+    "case_type": "contextual",
+    "skill_should_activate": true,
+    "notes": "Result filter with pipeline and project both provided",
+    "checks": { "must_call": ["pipelines_get_builds"], "must_not_call": ["core_list_projects"] }
+  }
+]
