@@ -1,0 +1,30 @@
+services:
+  agentgateway:
+    image: ghcr.io/agentgateway/agentgateway:latest
+    ports:
+      - '3000:3000'
+      - '127.0.0.1:15000:15000'
+    volumes:
+      - ./config.yaml:/etc/agentgateway/config.yaml:ro
+    command: ['-f', '/etc/agentgateway/config.yaml']
+    environment:
+      - AGENTGATEWAY_LOG_LEVEL=debug
+      - ADMIN_ADDR=0.0.0.0:15000
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+    depends_on:
+      - jaeger
+      - mcp-everything
+
+  mcp-everything:
+    image: node:alpine
+    command: npx -y @modelcontextprotocol/server-everything streamableHttp
+    environment:
+      - PORT=3001
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - '16686:16686' # Jaeger UI
+      - '4317:4317' # OTLP gRPC receiver
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true

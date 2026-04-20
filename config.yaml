@@ -1,0 +1,96 @@
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+
+config:
+  tracing:
+    otlpEndpoint: http://jaeger:4317
+    randomSampling: 1.0
+    fields:
+      add:
+        request_body: |-
+          string(request.body)
+        response_body: |-
+          string(response.body)
+        response_content: |-
+          string(response.body).split("\n").filter(l, l.startsWith("data: ") && l.contains("\"choices\":[{") && l.contains("\"content\":\"")).map(l, string(json(l.substring(6)).choices[0].delta.content)).join("")
+
+binds:
+  - port: 3000
+    listeners:
+      - protocol: HTTP
+        routes:
+          - name: copilot-chat
+            matches:
+              - path:
+                  pathPrefix: /chat
+            policies:
+              backendTLS:
+                hostname: api.githubcopilot.com
+              urlRewrite:
+                authority:
+                  host: api.githubcopilot.com
+            backends:
+              - host: api.githubcopilot.com:443
+
+          - name: auto-completion
+            matches:
+              - path:
+                  pathPrefix: /v1/engines
+            policies:
+              backendTLS:
+                hostname: copilot-proxy.githubusercontent.com
+              urlRewrite:
+                authority:
+                  host: copilot-proxy.githubusercontent.com
+            backends:
+              - host: copilot-proxy.githubusercontent.com:443
+
+          - name: copilot-models
+            matches:
+              - path:
+                  pathPrefix: /v1/models
+              - path:
+                  pathPrefix: /models
+            policies:
+              backendTLS:
+                hostname: api.githubcopilot.com
+              urlRewrite:
+                authority:
+                  host: api.githubcopilot.com
+            backends:
+              - host: api.githubcopilot.com:443
+
+          - name: mcp-everything
+            matches:
+              - path:
+                  pathPrefix: /mcp
+            policies:
+              mcpAuthorization:
+                rules:
+                  - 'mcp.tool.target == "everything" && mcp.tool.name == "echo"'
+              cors:
+                allowOrigins:
+                  - '*'
+                allowMethods:
+                  - '*'
+                allowHeaders:
+                  - '*'
+                exposeHeaders:
+                  - 'Mcp-Session-Id'
+            backends:
+              - mcp:
+                  targets:
+                    - name: everything
+                      mcp:
+                        host: mcp-everything
+                        port: 3001
+                        path: /mcp
+
+          - name: copilot-default
+            policies:
+              backendTLS:
+                hostname: api.githubcopilot.com
+              urlRewrite:
+                authority:
+                  host: api.githubcopilot.com
+            backends:
+              - host: api.githubcopilot.com:443
