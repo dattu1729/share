@@ -20,6 +20,9 @@ Per-skill contract (two required files, one optional):
                                                 get_response(name, input) -> dict
                                               Falls back to _NoTools (no-op).
 
+Tool definitions in tools.py must use Anthropic format (input_schema).
+The runner converts them automatically for OpenAI.
+
 Each prompt in prompts.json may include an optional "checks" object:
   {
     "must_call":     ["tool_a", "tool_b"],   -- these tools must appear in the trace
@@ -29,12 +32,14 @@ Each prompt in prompts.json may include an optional "checks" object:
 
 Usage:
   python evals/runner.py
+  python evals/runner.py --provider openai
+  python evals/runner.py --provider anthropic --model claude-opus-4-7
   python evals/runner.py --skill my-skill
   python evals/runner.py --skill a --skill b
   python evals/runner.py --trials 3
   python evals/runner.py --root /path/to/repo --artifacts-dir /tmp/out
 
-Requires: ANTHROPIC_API_KEY environment variable
+Requires: ANTHROPIC_API_KEY (anthropic) or OPENAI_API_KEY (openai)
 """
 
 import argparse
@@ -43,10 +48,13 @@ import json
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType
 
-import anthropic
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_openai import ChatOpenAI
 
 # ---------------------------------------------------------------------------
 # Load sibling modules via importlib so the runner works regardless of the
@@ -76,10 +84,52 @@ class _NoTools:
         }
 
 
-MODEL = "claude-sonnet-4-6"
 MAX_TURNS = 10
 LOOP_WARN_THRESHOLD = 6  # turns above this are flagged as potential thrashing
 PASS_THRESHOLD = 7        # overall_score >= this is considered passing
+
+PROVIDER_DEFAULTS: dict[str, dict] = {
+    "anthropic": {"model": "claude-sonnet-4-6", "env_var": "ANTHROPIC_API_KEY"},
+    "openai":    {"model": "gpt-4o",            "env_var": "OPENAI_API_KEY"},
+}
+
+
+# ---------------------------------------------------------------------------
+# Provider helpers
+# ---------------------------------------------------------------------------
+
+def _create_llm(provider: str, model: str, max_tokens: int):
+    if provider == "anthropic":
+        return ChatAnthropic(model=model, max_tokens=max_tokens)
+    if provider == "openai":
+        return ChatOpenAI(model=model, max_tokens=max_tokens)
+    raise ValueError(f"Unknown provider: {provider!r}")
+
+
+def _convert_tools(tool_defs: list[dict], provider: str) -> list[dict]:
+    """Convert Anthropic-format tool defs to the provider's expected format."""
+    if provider != "openai":
+        return tool_defs
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "parameters": t["input_schema"],
+            },
+        }
+        for t in tool_defs
+    ]
+
+
+def _normalize_stop_reason(response) -> str:
+    """Return a unified stop-reason string across providers.
+
+    Anthropic uses 'stop_reason'; OpenAI uses 'finish_reason'.
+    """
+    meta = response.response_metadata
+    return meta.get("stop_reason") or meta.get("finish_reason") or ""
 
 
 # ---------------------------------------------------------------------------
@@ -175,13 +225,14 @@ def _run_deterministic_checks(row: dict, run_result: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _run_case(
-    client: anthropic.Anthropic,
+    llm,
+    provider: str,
     skill_instructions: str,
     prompt: str,
     tools: ModuleType,
 ) -> dict:
     """
-    Run a single prompt through Claude with the skill instructions as the
+    Run a single prompt through the LLM with the skill instructions as the
     system prompt and the provided tools module for mock responses.
 
     Returns:
@@ -199,68 +250,83 @@ def _run_case(
         + skill_instructions
     )
 
-    messages: list[dict] = [{"role": "user", "content": prompt}]
+    tool_defs = _convert_tools(tools.DEFINITIONS, provider)
+    active_llm = llm.bind_tools(tool_defs) if tool_defs else llm
+
+    messages: list = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=prompt),
+    ]
     events: list[dict] = []
     last_response = None
     total_input_tokens = 0
     total_output_tokens = 0
 
     for turn in range(MAX_TURNS):
-        create_kwargs: dict = {
-            "model": MODEL,
-            "max_tokens": 2048,
-            "system": system_prompt,
-            "messages": messages,
-            "extra_headers": {"anthropic-beta": "prompt-caching-2024-07-31"},
-        }
-        if tools.DEFINITIONS:
-            create_kwargs["tools"] = tools.DEFINITIONS
-        response = client.messages.create(**create_kwargs)
+        response = active_llm.invoke(messages)
         last_response = response
-        total_input_tokens += response.usage.input_tokens
-        total_output_tokens += response.usage.output_tokens
 
+        meta = response.response_metadata
+        in_tok = meta.get("usage", {}).get("input_tokens", 0)
+        out_tok = meta.get("usage", {}).get("output_tokens", 0)
+        # OpenAI nests usage differently
+        if not in_tok and not out_tok:
+            usage = meta.get("token_usage", {})
+            in_tok = usage.get("prompt_tokens", 0)
+            out_tok = usage.get("completion_tokens", 0)
+        total_input_tokens += in_tok
+        total_output_tokens += out_tok
+
+        content = response.content
+        if isinstance(content, str):
+            content = [{"type": "text", "text": content}]
+
+        stop_reason = _normalize_stop_reason(response)
         events.append({
             "turn": turn,
-            "stop_reason": response.stop_reason,
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
-            "content": [b.model_dump() for b in response.content],
+            "stop_reason": stop_reason,
+            "input_tokens": in_tok,
+            "output_tokens": out_tok,
+            "content": content,
         })
 
-        if response.stop_reason in ("end_turn", "max_tokens"):
-            break
-        if response.stop_reason != "tool_use":
+        # "tool_use" = Anthropic, "tool_calls" = OpenAI
+        if stop_reason not in ("tool_use", "tool_calls"):
             break
 
-        tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
+        tool_calls = response.tool_calls
+        if not tool_calls:
+            break
+
         tool_results = [
-            {
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": json.dumps(
-                    tools.get_response(block.name, block.input)
-                ),
-            }
-            for block in tool_use_blocks
+            ToolMessage(
+                content=json.dumps(tools.get_response(tc["name"], tc["args"])),
+                tool_call_id=tc["id"],
+                name=tc["name"],
+            )
+            for tc in tool_calls
         ]
-        messages.append({
-            "role": "assistant",
-            "content": [b.model_dump() for b in response.content],
-        })
-        messages.append({"role": "user", "content": tool_results})
+        messages.append(response)
+        messages.extend(tool_results)
 
-    final_text = "\n".join(
-        b.text
-        for b in (last_response.content if last_response else [])
-        if b.type == "text"
-    )
+    final_text_parts = []
+    if last_response is not None:
+        content = last_response.content
+        if isinstance(content, str):
+            final_text_parts.append(content)
+        else:
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    final_text_parts.append(block["text"])
+    final_text = "\n".join(final_text_parts)
+
     tools_called = [
         block["name"]
         for event in events
         for block in event["content"]
-        if block["type"] == "tool_use"
+        if isinstance(block, dict) and block.get("type") == "tool_use"
     ]
+
     return {
         "final_text": final_text,
         "tools_called": tools_called,
@@ -276,7 +342,9 @@ def _run_case(
 # ---------------------------------------------------------------------------
 
 def run_skill(
-    client: anthropic.Anthropic,
+    llm,
+    provider: str,
+    model: str,
     skill_dir: Path,
     artifacts_dir: Path,
     trials: int = 1,
@@ -307,13 +375,13 @@ def run_skill(
             for t in range(trials):
                 t_start = time.perf_counter()
                 run_result = _run_case(
-                    client, skill_instructions, row["prompt"], tools
+                    llm, provider, skill_instructions, row["prompt"], tools
                 )
                 duration_ms = int((time.perf_counter() - t_start) * 1000)
 
                 det = _run_deterministic_checks(row, run_result)
                 grade_result = _grader.grade(
-                    client, skill_name, skill_instructions, row, run_result
+                    llm, provider, skill_name, skill_instructions, row, run_result
                 )
 
                 score = (
@@ -406,10 +474,10 @@ def run_skill(
             tok = result["avg_input_tokens"] + result["avg_output_tokens"]
             tok_str = f"{tok / 1000:.1f}k" if tok >= 1000 else str(int(tok))
             loops = sum(1 for tr in trial_records if tr["loop_detected"])
-            loop_str = f"  \u26a0 LOOP x{loops}" if loops else ""
+            loop_str = f"  ⚠ LOOP x{loops}" if loops else ""
             if trials == 1:
                 det = trial_records[0]["deterministic_checks"]
-                det_str = "\u2713" if det["passed"] else "\u2717"
+                det_str = "✓" if det["passed"] else "✗"
                 print(
                     f"det={det_str}  score={avg_score}/10  "
                     f"{'PASS' if pass_count else 'FAIL'}  "
@@ -422,6 +490,29 @@ def run_skill(
                 )
 
     _print_summary(results, trials)
+
+    # Per-skill report
+    valid = [r for r in results if "error" not in r and r.get("avg_score") is not None]
+    skill_report = {
+        "skill": skill_name,
+        "provider": provider,
+        "model": model,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "trials_per_case": trials,
+        "summary": {
+            "total_cases": len(results),
+            "scoreable_cases": len(valid),
+            "pass_rate": round(sum(r["pass_rate"] for r in valid) / len(valid), 3) if valid else None,
+            "avg_score": round(sum(r["avg_score"] for r in valid) / len(valid), 1) if valid else None,
+            "avg_input_tokens": round(sum(r["avg_input_tokens"] for r in valid) / len(valid), 1) if valid else None,
+            "avg_output_tokens": round(sum(r["avg_output_tokens"] for r in valid) / len(valid), 1) if valid else None,
+            "avg_duration_ms": round(sum(r["avg_duration_ms"] for r in valid) / len(valid), 1) if valid else None,
+        },
+        "cases": results,
+    }
+    report_path = artifacts_dir / f"{skill_name}-report.json"
+    report_path.write_text(json.dumps(skill_report, indent=2), encoding="utf-8")
+
     return results
 
 
@@ -458,11 +549,11 @@ def _print_summary(results: list[dict], trials: int) -> None:
             last = r["trials"][-1] if r["trials"] else {}
             for chk in (last.get("deterministic_checks") or {}).get("results", []):
                 if not chk["passed"]:
-                    print(f"          \u2717 {chk['detail']}")
+                    print(f"          ✗ {chk['detail']}")
             # Show model-grader issues from last trial
             grade = last.get("grade") or {}
             for issue in grade.get("issues") or []:
-                print(f"          \u2022 {issue}")
+                print(f"          • {issue}")
 
 
 # ---------------------------------------------------------------------------
@@ -470,22 +561,35 @@ def _print_summary(results: list[dict], trials: int) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print(
-            "Error: ANTHROPIC_API_KEY environment variable is not set.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
     parser = argparse.ArgumentParser(
         description="Run evals for Claude Code skills.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
             "  python evals/runner.py\n"
+            "  python evals/runner.py --provider openai\n"
+            "  python evals/runner.py --provider anthropic --model claude-opus-4-7\n"
             "  python evals/runner.py --skill my-skill\n"
             "  python evals/runner.py --trials 3\n"
             "  python evals/runner.py --root /repo --artifacts-dir /tmp/out\n"
+        ),
+    )
+    parser.add_argument(
+        "--provider",
+        choices=list(PROVIDER_DEFAULTS),
+        default="anthropic",
+        help="LLM provider to use (default: anthropic).",
+    )
+    _provider_defaults_str = ", ".join(
+        f"{p}: {d['model']}" for p, d in PROVIDER_DEFAULTS.items()
+    )
+    parser.add_argument(
+        "--model",
+        metavar="NAME",
+        default=None,
+        help=(
+            "Model name override. "
+            f"Defaults to the provider's default ({_provider_defaults_str})."
         ),
     )
     parser.add_argument(
@@ -532,9 +636,19 @@ def main() -> None:
         print("Error: --trials must be at least 1.", file=sys.stderr)
         sys.exit(1)
 
+    provider = args.provider
+    required_env = PROVIDER_DEFAULTS[provider]["env_var"]
+    if not os.environ.get(required_env):
+        print(
+            f"Error: {required_env} environment variable is not set.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    model = args.model or PROVIDER_DEFAULTS[provider]["model"]
     root = Path(args.root)
     artifacts_dir = Path(args.artifacts_dir)
-    client = anthropic.Anthropic()
+    llm = _create_llm(provider, model, max_tokens=2048)
 
     all_skill_dirs = discover_skills(root)
     if not all_skill_dirs:
@@ -555,9 +669,11 @@ def main() -> None:
     else:
         skill_dirs = all_skill_dirs
 
+    print(f"Provider: {provider}  Model: {model}")
+
     all_results: list[dict] = []
     for skill_dir in skill_dirs:
-        results = run_skill(client, skill_dir, artifacts_dir, args.trials)
+        results = run_skill(llm, provider, model, skill_dir, artifacts_dir, args.trials)
         all_results.extend(results)
 
     summary_path = artifacts_dir / "summary.json"

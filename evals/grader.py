@@ -8,17 +8,39 @@ result from the runner and returns a structured grade dict.
 import json
 from pathlib import Path
 
-import anthropic
-
-MODEL = "claude-sonnet-4-6"
-
 RUBRIC_SCHEMA = json.loads(
     (Path(__file__).parent / "rubric.schema.json").read_text(encoding="utf-8")
 )
 
+_RUBRIC_SCHEMA_BODY = {
+    "type": "object",
+    "required": RUBRIC_SCHEMA["required"],
+    "properties": RUBRIC_SCHEMA["properties"],
+}
+
+
+def _build_submit_grade_tool(provider: str) -> dict:
+    """Return the submit_grade tool definition in the provider's format."""
+    if provider == "openai":
+        return {
+            "type": "function",
+            "function": {
+                "name": "submit_grade",
+                "description": "Submit the structured evaluation grade for this skill response.",
+                "parameters": _RUBRIC_SCHEMA_BODY,
+            },
+        }
+    # Anthropic format
+    return {
+        "name": "submit_grade",
+        "description": "Submit the structured evaluation grade for this skill response.",
+        "input_schema": _RUBRIC_SCHEMA_BODY,
+    }
+
 
 def grade(
-    client: anthropic.Anthropic,
+    llm,
+    provider: str,
     skill_name: str,
     skill_instructions: str,
     row: dict,
@@ -57,23 +79,16 @@ def grade(
         f"Set negative_case_respected to null for positive test cases."
     )
 
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=1024,
-        messages=[{"role": "user", "content": grading_prompt}],
-        tools=[
-            {
-                "name": "submit_grade",
-                "description": "Submit the structured evaluation grade for this skill response.",
-                "input_schema": {
-                    "type": "object",
-                    "required": RUBRIC_SCHEMA["required"],
-                    "properties": RUBRIC_SCHEMA["properties"],
-                },
-            }
-        ],
-        tool_choice={"type": "tool", "name": "submit_grade"},
-    )
+    from langchain_core.messages import HumanMessage
 
-    tool_use = next((b for b in response.content if b.type == "tool_use"), None)
-    return tool_use.input if tool_use else None
+    grader_llm = llm.bind_tools(
+        [_build_submit_grade_tool(provider)],
+        tool_choice="submit_grade",
+    )
+    response = grader_llm.invoke([HumanMessage(content=grading_prompt)])
+
+    tool_use = next(
+        (tc for tc in (response.tool_calls or []) if tc["name"] == "submit_grade"),
+        None,
+    )
+    return tool_use["args"] if tool_use else None
