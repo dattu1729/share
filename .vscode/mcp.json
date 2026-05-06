@@ -1,0 +1,9 @@
+{
+	"servers": {
+		"my-ado": {
+			"url": "https://mcp.dev.azure.com/datpaldev",
+			"type": "http"
+		}
+	},
+	"inputs": []
+}

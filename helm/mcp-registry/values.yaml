@@ -1,0 +1,81 @@
+registry:
+  image:
+    repository: ghcr.io/modelcontextprotocol/registry
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  config:
+    serverAddress: ":8080"
+    version: "prod"
+    # Path inside the container to seed data (mount a ConfigMap or leave empty)
+    seedFrom: ""
+    enableAnonymousAuth: false
+    enableRegistryValidation: false
+
+  # GitHub OAuth — leave empty to disable publishing
+  github:
+    clientId: ""
+    clientSecret: ""
+
+  # Ed25519 seed for JWT signing — generate with: openssl rand -hex 32
+  jwtPrivateKey: ""
+
+  # OIDC (disabled by default)
+  oidc:
+    enabled: false
+    issuer: ""
+    clientId: ""
+    extraClaims: ""
+    editPermissions: ""
+    publishPermissions: ""
+
+  # GitHub OIDC audience for Actions-based publishing
+  githubOidcAudience: ""
+
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  auth:
+    database: mcp-registry
+    username: mcp
+    password: mcp
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Set this to use an external Postgres instead of the bundled one
+  # externalUrl: "postgres://user:pass@host:5432/dbname?sslmode=require"
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: registry.example.com
+  tls: []
+
+seedConfigMap:
+  enabled: false
+  # name: mcp-registry-seed
+  # key: seed.json

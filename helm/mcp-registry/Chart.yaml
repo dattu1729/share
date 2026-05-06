@@ -1,0 +1,6 @@
+apiVersion: v2
+name: mcp-registry
+description: Model Context Protocol Registry
+type: application
+version: 0.1.0
+appVersion: "1.7.8"

@@ -1,0 +1,46 @@
+services:
+  nginx:
+    image: nginx:alpine
+    depends_on:
+      - registry
+    ports:
+      - "8443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/certs:ro
+    restart: unless-stopped
+
+  registry:
+    image: ghcr.io/modelcontextprotocol/registry:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      MCP_REGISTRY_DATABASE_URL: postgres://mcp:mcp@postgres:5432/mcp-registry?sslmode=disable
+    volumes:
+      - ./data:/data:ro
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mcp
+      POSTGRES_PASSWORD: mcp
+      POSTGRES_DB: mcp-registry
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcp -d mcp-registry"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

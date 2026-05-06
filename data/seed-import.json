@@ -1,0 +1,19 @@
+[
+  {
+    "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+    "name": "ac.inference.sh/mcp",
+    "description": "Run 150+ AI apps \u2014 image, video, audio, LLMs, 3D and more. Browse, execute, stream results.",
+    "title": "inference.sh",
+    "version": "1.0.0",
+    "remotes": [
+      {
+        "type": "streamable-http",
+        "url": "https://sh.inference.ac"
+      },
+      {
+        "type": "streamable-http",
+        "url": "https://api.inference.sh/mcp"
+      }
+    ]
+  }
+]

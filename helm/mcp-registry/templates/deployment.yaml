@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-registry
+  labels:
+    {{- include "mcp-registry.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.registry.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "mcp-registry.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mcp-registry.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: registry
+          image: "{{ .Values.registry.image.repository }}:{{ .Values.registry.image.tag }}"
+          imagePullPolicy: {{ .Values.registry.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-registry
+            - secretRef:
+                name: {{ .Release.Name }}-registry
+          {{- if .Values.seedConfigMap.enabled }}
+          volumeMounts:
+            - name: seed-data
+              mountPath: /data
+              readOnly: true
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /v0/servers?limit=1
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v0/servers?limit=1
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.registry.resources | nindent 12 }}
+      {{- if .Values.seedConfigMap.enabled }}
+      volumes:
+        - name: seed-data
+          configMap:
+            name: {{ .Values.seedConfigMap.name }}
+      {{- end }}
+      {{- if .Values.postgres.enabled }}
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z {{ .Release.Name }}-postgres 5432; do
+                echo "waiting for postgres..."; sleep 2;
+              done
+      {{- end }}

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-registry
+  labels:
+    {{- include "mcp-registry.labels" . | nindent 4 }}
+data:
+  MCP_REGISTRY_SERVER_ADDRESS: {{ .Values.registry.config.serverAddress | quote }}
+  MCP_REGISTRY_VERSION: {{ .Values.registry.config.version | quote }}
+  MCP_REGISTRY_SEED_FROM: {{ .Values.registry.config.seedFrom | quote }}
+  MCP_REGISTRY_ENABLE_ANONYMOUS_AUTH: {{ .Values.registry.config.enableAnonymousAuth | quote }}
+  MCP_REGISTRY_ENABLE_REGISTRY_VALIDATION: {{ .Values.registry.config.enableRegistryValidation | quote }}
+  MCP_REGISTRY_OIDC_ENABLED: {{ .Values.registry.oidc.enabled | quote }}
+  MCP_REGISTRY_OIDC_ISSUER: {{ .Values.registry.oidc.issuer | quote }}
+  MCP_REGISTRY_OIDC_CLIENT_ID: {{ .Values.registry.oidc.clientId | quote }}
+  MCP_REGISTRY_OIDC_EXTRA_CLAIMS: {{ .Values.registry.oidc.extraClaims | quote }}
+  MCP_REGISTRY_OIDC_EDIT_PERMISSIONS: {{ .Values.registry.oidc.editPermissions | quote }}
+  MCP_REGISTRY_OIDC_PUBLISH_PERMISSIONS: {{ .Values.registry.oidc.publishPermissions | quote }}
+  MCP_REGISTRY_GITHUB_OIDC_AUDIENCE: {{ .Values.registry.githubOidcAudience | quote }}
